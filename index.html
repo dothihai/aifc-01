@@ -180,9 +180,41 @@
         .navigation {
             display: flex;
             justify-content: space-between;
+            gap: 10px;
             padding: 20px 30px;
             background: #f8f9fa;
             border-top: 2px solid #e9ecef;
+        }
+
+        .nav-right {
+            display: flex;
+            gap: 10px;
+        }
+
+        .question-jump-input {
+            width: 70px;
+            padding: 4px 8px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .explain-button {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 8px 16px;
+            background: #10a37f;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.3s;
+        }
+
+        .explain-button:hover {
+            background: #0d8a6a;
         }
         
         .nav-button {
@@ -236,7 +268,10 @@
                 <div class="question-card">
                     <div class="question-header">
                         <span class="question-number" id="question-number">Question 1</span>
-                        <span id="question-progress">1 / 294</span>
+                        <span class="question-progress">
+                            <input type="number" id="question-jump" min="1" class="question-jump-input" />
+                            <span> / <span id="question-total">0</span></span>
+                        </span>
                     </div>
                     <div class="question-text" id="question-text"></div>
                     <div class="options" id="options-container"></div>
@@ -248,7 +283,10 @@
         
         <div class="navigation">
             <button class="nav-button" id="prev-button" onclick="previousQuestion()">← Previous</button>
-            <button class="nav-button" id="next-button" onclick="nextQuestion()">Next →</button>
+            <div class="nav-right">
+                <button class="nav-button" id="next-button" onclick="nextQuestion()">Next →</button>
+                <button class="nav-button" id="last-button" onclick="lastQuestion()">Last ⇥</button>
+            </div>
         </div>
     </div>
     
@@ -263,15 +301,58 @@
             answered: new Set()
         };
         
+        const STORAGE_KEY = 'aifc01-current-question-index';
+
         function initQuiz() {
             document.getElementById('total-questions').textContent = questions.length;
+            document.getElementById('question-total').textContent = questions.length;
+            const jumpInput = document.getElementById('question-jump');
+            jumpInput.max = questions.length;
+            jumpInput.addEventListener('change', handleJump);
+            jumpInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    handleJump();
+                    jumpInput.blur();
+                }
+            });
+
+            try {
+                const saved = parseInt(localStorage.getItem(STORAGE_KEY), 10);
+                if (!isNaN(saved) && saved >= 0 && saved < questions.length) {
+                    currentQuestionIndex = saved;
+                }
+            } catch (e) { /* ignore */ }
+
+            displayQuestion();
+        }
+
+        function saveProgress() {
+            try {
+                localStorage.setItem(STORAGE_KEY, String(currentQuestionIndex));
+            } catch (e) { /* ignore */ }
+        }
+
+        function handleJump() {
+            const jumpInput = document.getElementById('question-jump');
+            let val = parseInt(jumpInput.value, 10);
+            if (isNaN(val)) {
+                jumpInput.value = currentQuestionIndex + 1;
+                return;
+            }
+            val = Math.max(1, Math.min(questions.length, val));
+            currentQuestionIndex = val - 1;
+            displayQuestion();
+        }
+
+        function lastQuestion() {
+            currentQuestionIndex = questions.length - 1;
             displayQuestion();
         }
         
         function displayQuestion() {
             const question = questions[currentQuestionIndex];
             document.getElementById('question-number').textContent = `Question ${question.id}`;
-            document.getElementById('question-progress').textContent = `${currentQuestionIndex + 1} / ${questions.length}`;
+            document.getElementById('question-jump').value = currentQuestionIndex + 1;
             document.getElementById('question-text').textContent = question.question;
             
             const optionsContainer = document.getElementById('options-container');
@@ -291,6 +372,8 @@
             document.getElementById('check-button').disabled = false;
             document.getElementById('prev-button').disabled = currentQuestionIndex === 0;
             document.getElementById('next-button').disabled = currentQuestionIndex === questions.length - 1;
+            document.getElementById('last-button').disabled = currentQuestionIndex === questions.length - 1;
+            saveProgress();
         }
         
         function checkAnswer() {
@@ -316,9 +399,15 @@
             
             const resultDiv = document.getElementById('result');
             resultDiv.className = `result show ${isCorrect ? 'correct' : 'incorrect'}`;
-            resultDiv.innerHTML = isCorrect 
-                ? '✅ Correct! Well done!' 
+            const baseMsg = isCorrect
+                ? '✅ Correct! Well done!'
                 : `❌ Incorrect. The correct answer is <strong>${question.correct_answer}</strong>`;
+            const optionsText = Object.entries(question.options)
+                .map(([k, v]) => `${k}. ${v}`)
+                .join('\n');
+            const promptText = `Dịch vào giải thích đáp án: ${question.question}\n${optionsText}\nĐáp án đúng: ${question.correct_answer}`;
+            const chatgptUrl = `https://chatgpt.com/?prompt=${encodeURIComponent(promptText)}`;
+            resultDiv.innerHTML = `${baseMsg}<br><a href="${chatgptUrl}" target="_blank" rel="noopener noreferrer" class="explain-button">💬 Giải thích bằng ChatGPT</a>`;
             
             const options = document.querySelectorAll('.option');
             options.forEach(option => {
@@ -359,6 +448,9 @@
         }
         
         document.addEventListener('keydown', (e) => {
+            if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+                return;
+            }
             if (e.key === 'ArrowRight' && currentQuestionIndex < questions.length - 1) {
                 nextQuestion();
             } else if (e.key === 'ArrowLeft' && currentQuestionIndex > 0) {
